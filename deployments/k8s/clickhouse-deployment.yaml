@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clickhouse
+  namespace: edge-dns
+  labels:
+    app.kubernetes.io/name: clickhouse
+    app.kubernetes.io/part-of: edge-dns
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: clickhouse
+      app.kubernetes.io/part-of: edge-dns
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: clickhouse
+        app.kubernetes.io/part-of: edge-dns
+    spec:
+      containers:
+        - name: clickhouse
+          image: clickhouse/clickhouse-server:latest
+          ports:
+            - containerPort: 8123
+              protocol: TCP
+              name: http
+            - containerPort: 9000
+              protocol: TCP
+              name: native
+          env:
+            - name: CLICKHOUSE_DB
+              value: default
+            - name: CLICKHOUSE_USER
+              value: default
+            - name: CLICKHOUSE_PASSWORD
+              value: ""
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/clickhouse
+            - name: log
+              mountPath: /var/log/clickhouse-server
+            - name: init-sql
+              mountPath: /docker-entrypoint-initdb.d/clickhouse-init.sql
+              subPath: clickhouse-init.sql
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2"
+              memory: "4Gi"
+          livenessProbe:
+            tcpSocket:
+              port: 9000
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          readinessProbe:
+            tcpSocket:
+              port: 9000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: clickhouse-data
+        - name: log
+          persistentVolumeClaim:
+            claimName: clickhouse-logs
+        - name: init-sql
+          configMap:
+            name: edge-dns-config
+            items:
+              - key: clickhouse-init.sql
+                path: clickhouse-init.sql

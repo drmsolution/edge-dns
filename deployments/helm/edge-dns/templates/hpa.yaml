@@ -1,0 +1,31 @@
+{{- if .Values.edge-dns.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "edge-dns.componentName" . }}
+  namespace: {{ include "edge-dns.namespace" . }}
+  labels:
+    {{- include "edge-dns.labels" . | nindent 4 }}
+    app.kubernetes.io/name: {{ include "edge-dns.componentName" . }}
+    app.kubernetes.io/part-of: edge-dns
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "edge-dns.componentName" . }}
+  minReplicas: {{ .Values.edge-dns.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.edge-dns.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.edge-dns.autoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.edge-dns.autoscaling.targetMemoryUtilizationPercentage }}
+{{- end }}

@@ -1,0 +1,15 @@
+Edge DNS has been deployed to namespace {{ include "edge-dns.namespace" . }}.
+
+Services:
+  - Redis:      {{ include "redis.name" . }}.{{ include "edge-dns.namespace" . }}:{{ .Values.redis.service.port }}
+  - ClickHouse: {{ include "clickhouse.name" . }}.{{ include "edge-dns.namespace" . }}:{{ .Values.clickhouse.service.nativePort }}
+  - Edge DNS:   {{ include "edge-dns.componentName" . }} (LoadBalancer)
+    Ports: UDP/TCP {{ .Values.edge-dns.dnsPort }}, DoH {{ .Values.edge-dns.dohPort }}, DoT {{ .Values.edge-dns.dotPort }}
+  - Admin API:  {{ include "admin-api.name" . }}.{{ include "edge-dns.namespace" . }}:{{ .Values.admin-api.port }} (ClusterIP)
+
+To get the LoadBalancer IP:
+  kubectl -n {{ include "edge-dns.namespace" . }} get svc {{ include "edge-dns.componentName" . }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+
+To port-forward the Admin API locally:
+  kubectl -n {{ include "edge-dns.namespace" . }} port-forward svc/{{ include "admin-api.name" . }} {{ .Values.admin-api.port }}:{{ .Values.admin-api.port }}
+  curl http://localhost:{{ .Values.admin-api.port }}/api/v1/analytics/summary

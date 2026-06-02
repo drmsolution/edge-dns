@@ -1,0 +1,99 @@
+# ── Global ──
+global:
+  namespace: edge-dns
+  imageRegistry: ghcr.io
+  imageRepository: drmsolution/edge-dns
+  imageTag: latest
+  imagePullPolicy: Always
+
+# ── Redis ──
+redis:
+  image: redis:7-alpine
+  resources:
+    requests:
+      cpu: 100m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  service:
+    port: 6379
+
+# ── ClickHouse ──
+clickhouse:
+  image: clickhouse/clickhouse-server:latest
+  database: default
+  user: default
+  password: ""
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2
+      memory: 4Gi
+  service:
+    httpPort: 8123
+    nativePort: 9000
+  persistence:
+    data:
+      storageClass: ""
+      size: 50Gi
+    logs:
+      storageClass: ""
+      size: 10Gi
+
+# ── Edge DNS Resolver ──
+edge-dns:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    maxUnavailable: 1
+    maxSurge: 1
+  dnsPort: 8053
+  dohPort: 8443
+  dotPort: 8853
+  metricsPort: 2112
+  resources:
+    requests:
+      cpu: 200m
+      memory: 128Mi
+    limits:
+      cpu: 1
+      memory: 512Mi
+  probes:
+    liveness:
+      initialDelaySeconds: 10
+      periodSeconds: 15
+    readiness:
+      initialDelaySeconds: 5
+      periodSeconds: 10
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+# ── Admin API ──
+admin-api:
+  replicas: 1
+  port: 8080
+  strategy:
+    type: RollingUpdate
+    maxUnavailable: 0
+    maxSurge: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  probes:
+    liveness:
+      initialDelaySeconds: 10
+      periodSeconds: 15
+    readiness:
+      initialDelaySeconds: 5
+      periodSeconds: 10

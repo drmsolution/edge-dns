@@ -45,7 +45,8 @@ func main() {
 	}))
 	slog.SetDefault(logger)
 
-	rule.InitChecker(RedisAddr)
+	redisAddr := env("REDIS_ADDR", RedisAddr)
+	rule.InitChecker(redisAddr)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -70,7 +71,7 @@ func main() {
 	agg.StartWorker(ctx)
 
 	redisSyncClient := redis.NewClient(&redis.Options{
-		Addr:        RedisAddr,
+		Addr:        redisAddr,
 		DialTimeout: 3 * time.Second,
 		PoolSize:    10,
 	})

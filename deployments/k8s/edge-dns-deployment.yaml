@@ -1,0 +1,131 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: edge-dns
+  namespace: edge-dns
+  labels:
+    app.kubernetes.io/name: edge-dns
+    app.kubernetes.io/part-of: edge-dns
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: edge-dns
+      app.kubernetes.io/part-of: edge-dns
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: edge-dns
+        app.kubernetes.io/part-of: edge-dns
+    spec:
+      terminationGracePeriodSeconds: 15
+      containers:
+        - name: edge-dns
+          image: ghcr.io/drmsolution/edge-dns:latest
+          imagePullPolicy: Always
+          args: ["/app/edge-dns"]
+          ports:
+            - containerPort: 8053
+              protocol: UDP
+              name: dns-udp
+            - containerPort: 8053
+              protocol: TCP
+              name: dns-tcp
+            - containerPort: 8443
+              protocol: TCP
+              name: doh
+            - containerPort: 8853
+              protocol: TCP
+              name: dot
+            - containerPort: 2112
+              protocol: TCP
+              name: metrics
+          env:
+            - name: REDIS_ADDR
+              valueFrom:
+                configMapKeyRef:
+                  name: edge-dns-config
+                  key: REDIS_ADDR
+            - name: CLICKHOUSE_ADDR
+              valueFrom:
+                configMapKeyRef:
+                  name: edge-dns-config
+                  key: CLICKHOUSE_ADDR
+            - name: CLICKHOUSE_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: edge-dns-config
+                  key: CLICKHOUSE_DB
+            - name: CLICKHOUSE_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: edge-dns-config
+                  key: CLICKHOUSE_USER
+            - name: CLICKHOUSE_PASS
+              valueFrom:
+                configMapKeyRef:
+                  name: edge-dns-config
+                  key: CLICKHOUSE_PASS
+            - name: METRICS_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: edge-dns-config
+                  key: METRICS_PORT
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "128Mi"
+            limits:
+              cpu: "1"
+              memory: "512Mi"
+          livenessProbe:
+            tcpSocket:
+              port: 8053
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            tcpSocket:
+              port: 8053
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: edge-dns
+  namespace: edge-dns
+  labels:
+    app.kubernetes.io/name: edge-dns
+    app.kubernetes.io/part-of: edge-dns
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  ports:
+    - port: 8053
+      targetPort: dns-udp
+      protocol: UDP
+      name: dns-udp
+    - port: 8053
+      targetPort: dns-tcp
+      protocol: TCP
+      name: dns-tcp
+    - port: 8443
+      targetPort: doh
+      protocol: TCP
+      name: doh
+    - port: 8853
+      targetPort: dot
+      protocol: TCP
+      name: dot
+  selector:
+    app.kubernetes.io/name: edge-dns
+    app.kubernetes.io/part-of: edge-dns

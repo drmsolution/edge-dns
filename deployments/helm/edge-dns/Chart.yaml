@@ -1,0 +1,17 @@
+apiVersion: v2
+name: edge-dns
+description: A production-grade Edge DNS resolver with Redis caching, ClickHouse analytics, rate limiting, and admin API.
+type: application
+version: 0.1.0
+appVersion: "latest"
+keywords:
+  - dns
+  - edge-dns
+  - resolver
+  - analytics
+home: https://github.com/drmsolution/edge-dns
+sources:
+  - https://github.com/drmsolution/edge-dns
+maintainers:
+  - name: drmsolution
+    email: drmsolution@users.noreply.github.com

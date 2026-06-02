@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: admin-api
+  namespace: edge-dns
+  labels:
+    app.kubernetes.io/name: admin-api
+    app.kubernetes.io/part-of: edge-dns
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: admin-api
+      app.kubernetes.io/part-of: edge-dns
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: admin-api
+        app.kubernetes.io/part-of: edge-dns
+    spec:
+      containers:
+        - name: admin-api
+          image: ghcr.io/drmsolution/edge-dns:latest
+          imagePullPolicy: Always
+          args: ["/app/admin-api"]
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+              name: http
+          env:
+            - name: REDIS_ADDR
+              valueFrom:
+                configMapKeyRef:
+                  name: edge-dns-config
+                  key: REDIS_ADDR
+            - name: CLICKHOUSE_ADDR
+              valueFrom:
+                configMapKeyRef:
+                  name: edge-dns-config
+                  key: CLICKHOUSE_ADDR
+            - name: CLICKHOUSE_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: edge-dns-config
+                  key: CLICKHOUSE_DB
+            - name: CLICKHOUSE_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: edge-dns-config
+                  key: CLICKHOUSE_USER
+            - name: CLICKHOUSE_PASS
+              valueFrom:
+                configMapKeyRef:
+                  name: edge-dns-config
+                  key: CLICKHOUSE_PASS
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "64Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          livenessProbe:
+            httpGet:
+              path: /api/v1/analytics/summary
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /api/v1/analytics/summary
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: admin-api
+  namespace: edge-dns
+  labels:
+    app.kubernetes.io/name: admin-api
+    app.kubernetes.io/part-of: edge-dns
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: admin-api
+    app.kubernetes.io/part-of: edge-dns

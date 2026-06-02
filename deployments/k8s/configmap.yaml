@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: edge-dns-config
+  namespace: edge-dns
+  labels:
+    app.kubernetes.io/name: edge-dns
+    app.kubernetes.io/part-of: edge-dns
+data:
+  # ── ClickHouse init SQL (mounted to /docker-entrypoint-initdb.d/) ──
+  clickhouse-init.sql: |
+    CREATE TABLE IF NOT EXISTS default.dns_logs (
+      timestamp     DateTime('UTC') DEFAULT now(),
+      user_id       String,
+      domain        String,
+      query_type    String,
+      response_code UInt16,
+      duration_ms   Float64,
+      protocol      String,
+      blocked       UInt8 DEFAULT 0,
+      client_ip     String DEFAULT '',
+      resolver_ip   String DEFAULT ''
+    ) ENGINE = MergeTree()
+      PARTITION BY toYYYYMM(timestamp)
+      ORDER BY (timestamp, user_id)
+      TTL timestamp + INTERVAL 90 DAY
+      SETTINGS index_granularity = 8192;
+
+  # ── Application environment defaults ──
+  REDIS_ADDR: "redis:6379"
+  CLICKHOUSE_ADDR: "clickhouse:9000"
+  CLICKHOUSE_DB: "default"
+  CLICKHOUSE_USER: "default"
+  CLICKHOUSE_PASS: ""
+  METRICS_PORT: "2112"
+  ADMIN_API_ADDR: "admin-api:8080"

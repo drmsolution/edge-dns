@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "clickhouse.name" . }}
+  namespace: {{ include "edge-dns.namespace" . }}
+  labels:
+    {{- include "edge-dns.labels" . | nindent 4 }}
+    app.kubernetes.io/name: {{ include "clickhouse.name" . }}
+    app.kubernetes.io/part-of: edge-dns
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "clickhouse.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "clickhouse.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/part-of: edge-dns
+    spec:
+      containers:
+        - name: clickhouse
+          image: {{ .Values.clickhouse.image }}
+          ports:
+            - containerPort: {{ .Values.clickhouse.service.httpPort }}
+              protocol: TCP
+              name: http
+            - containerPort: {{ .Values.clickhouse.service.nativePort }}
+              protocol: TCP
+              name: native
+          env:
+            - name: CLICKHOUSE_DB
+              value: {{ .Values.clickhouse.database }}
+            - name: CLICKHOUSE_USER
+              value: {{ .Values.clickhouse.user }}
+            - name: CLICKHOUSE_PASSWORD
+              value: {{ .Values.clickhouse.password | quote }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/clickhouse
+            - name: log
+              mountPath: /var/log/clickhouse-server
+            - name: init-sql
+              mountPath: /docker-entrypoint-initdb.d/clickhouse-init.sql
+              subPath: clickhouse-init.sql
+          resources:
+            {{- toYaml .Values.clickhouse.resources | nindent 12 }}
+          livenessProbe:
+            tcpSocket:
+              port: {{ .Values.clickhouse.service.nativePort }}
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          readinessProbe:
+            tcpSocket:
+              port: {{ .Values.clickhouse.service.nativePort }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "clickhouse.name" . }}-data
+        - name: log
+          persistentVolumeClaim:
+            claimName: {{ include "clickhouse.name" . }}-logs
+        - name: init-sql
+          configMap:
+            name: {{ include "edge-dns.fullname" . }}-config
+            items:
+              - key: clickhouse-init.sql
+                path: clickhouse-init.sql

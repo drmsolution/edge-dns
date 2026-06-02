@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: edge-dns
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - redis-deployment.yaml
+  - redis-service.yaml
+  - clickhouse-pvc.yaml
+  - clickhouse-deployment.yaml
+  - clickhouse-service.yaml
+  - edge-dns-deployment.yaml
+  - admin-api-deployment.yaml

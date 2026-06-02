@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "admin-api.name" . }}
+  namespace: {{ include "edge-dns.namespace" . }}
+  labels:
+    {{- include "edge-dns.labels" . | nindent 4 }}
+    app.kubernetes.io/name: {{ include "admin-api.name" . }}
+    app.kubernetes.io/part-of: edge-dns
+spec:
+  replicas: {{ .Values.admin-api.replicas }}
+  strategy:
+    type: {{ .Values.admin-api.strategy.type }}
+    rollingUpdate:
+      maxUnavailable: {{ .Values.admin-api.strategy.maxUnavailable }}
+      maxSurge: {{ .Values.admin-api.strategy.maxSurge }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "admin-api.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "admin-api.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/part-of: edge-dns
+    spec:
+      containers:
+        - name: admin-api
+          image: {{ include "edge-dns.image" . }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          args: ["/app/admin-api"]
+          ports:
+            - containerPort: {{ .Values.admin-api.port }}
+              protocol: TCP
+              name: http
+          env:
+            - name: REDIS_ADDR
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "edge-dns.fullname" . }}-config
+                  key: REDIS_ADDR
+            - name: CLICKHOUSE_ADDR
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "edge-dns.fullname" . }}-config
+                  key: CLICKHOUSE_ADDR
+            - name: CLICKHOUSE_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "edge-dns.fullname" . }}-config
+                  key: CLICKHOUSE_DB
+            - name: CLICKHOUSE_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "edge-dns.fullname" . }}-config
+                  key: CLICKHOUSE_USER
+            - name: CLICKHOUSE_PASS
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "edge-dns.fullname" . }}-config
+                  key: CLICKHOUSE_PASS
+          resources:
+            {{- toYaml .Values.admin-api.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /api/v1/analytics/summary
+              port: {{ .Values.admin-api.port }}
+            initialDelaySeconds: {{ .Values.admin-api.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.admin-api.probes.liveness.periodSeconds }}
+          readinessProbe:
+            httpGet:
+              path: /api/v1/analytics/summary
+              port: {{ .Values.admin-api.port }}
+            initialDelaySeconds: {{ .Values.admin-api.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.admin-api.probes.readiness.periodSeconds }}

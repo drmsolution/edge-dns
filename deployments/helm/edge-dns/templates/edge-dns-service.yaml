@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "edge-dns.componentName" . }}
+  namespace: {{ include "edge-dns.namespace" . }}
+  labels:
+    {{- include "edge-dns.labels" . | nindent 4 }}
+    app.kubernetes.io/name: {{ include "edge-dns.componentName" . }}
+    app.kubernetes.io/part-of: edge-dns
+  annotations:
+    {{- if .Values.edge-dns.serviceAnnotations }}
+    {{- toYaml .Values.edge-dns.serviceAnnotations | nindent 4 }}
+    {{- end }}
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  ports:
+    - port: {{ .Values.edge-dns.dnsPort }}
+      targetPort: dns-udp
+      protocol: UDP
+      name: dns-udp
+    - port: {{ .Values.edge-dns.dnsPort }}
+      targetPort: dns-tcp
+      protocol: TCP
+      name: dns-tcp
+    - port: {{ .Values.edge-dns.dohPort }}
+      targetPort: doh
+      protocol: TCP
+      name: doh
+    - port: {{ .Values.edge-dns.dotPort }}
+      targetPort: dot
+      protocol: TCP
+      name: dot
+  selector:
+    app.kubernetes.io/name: {{ include "edge-dns.componentName" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}

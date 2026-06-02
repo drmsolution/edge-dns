@@ -1,0 +1,100 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "edge-dns.componentName" . }}
+  namespace: {{ include "edge-dns.namespace" . }}
+  labels:
+    {{- include "edge-dns.labels" . | nindent 4 }}
+    app.kubernetes.io/name: {{ include "edge-dns.componentName" . }}
+    app.kubernetes.io/part-of: edge-dns
+spec:
+  replicas: {{ .Values.edge-dns.replicas }}
+  strategy:
+    type: {{ .Values.edge-dns.strategy.type }}
+    rollingUpdate:
+      maxUnavailable: {{ .Values.edge-dns.strategy.maxUnavailable }}
+      maxSurge: {{ .Values.edge-dns.strategy.maxSurge }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "edge-dns.componentName" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "edge-dns.componentName" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/part-of: edge-dns
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "{{ .Values.edge-dns.metricsPort }}"
+        prometheus.io/path: "/metrics"
+    spec:
+      terminationGracePeriodSeconds: 15
+      containers:
+        - name: edge-dns
+          image: {{ include "edge-dns.image" . }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          args: ["/app/edge-dns"]
+          ports:
+            - containerPort: {{ .Values.edge-dns.dnsPort }}
+              protocol: UDP
+              name: dns-udp
+            - containerPort: {{ .Values.edge-dns.dnsPort }}
+              protocol: TCP
+              name: dns-tcp
+            - containerPort: {{ .Values.edge-dns.dohPort }}
+              protocol: TCP
+              name: doh
+            - containerPort: {{ .Values.edge-dns.dotPort }}
+              protocol: TCP
+              name: dot
+            - containerPort: {{ .Values.edge-dns.metricsPort }}
+              protocol: TCP
+              name: metrics
+          env:
+            - name: REDIS_ADDR
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "edge-dns.fullname" . }}-config
+                  key: REDIS_ADDR
+            - name: CLICKHOUSE_ADDR
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "edge-dns.fullname" . }}-config
+                  key: CLICKHOUSE_ADDR
+            - name: CLICKHOUSE_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "edge-dns.fullname" . }}-config
+                  key: CLICKHOUSE_DB
+            - name: CLICKHOUSE_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "edge-dns.fullname" . }}-config
+                  key: CLICKHOUSE_USER
+            - name: CLICKHOUSE_PASS
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "edge-dns.fullname" . }}-config
+                  key: CLICKHOUSE_PASS
+            - name: METRICS_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "edge-dns.fullname" . }}-config
+                  key: METRICS_PORT
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          resources:
+            {{- toYaml .Values.edge-dns.resources | nindent 12 }}
+          livenessProbe:
+            tcpSocket:
+              port: {{ .Values.edge-dns.dnsPort }}
+            initialDelaySeconds: {{ .Values.edge-dns.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.edge-dns.probes.liveness.periodSeconds }}
+          readinessProbe:
+            tcpSocket:
+              port: {{ .Values.edge-dns.dnsPort }}
+            initialDelaySeconds: {{ .Values.edge-dns.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.edge-dns.probes.readiness.periodSeconds }}
