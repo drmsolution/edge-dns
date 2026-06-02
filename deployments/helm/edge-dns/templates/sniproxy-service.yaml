@@ -1,0 +1,22 @@
+{{- if .Values.sniproxy.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: sniproxy
+  namespace: {{ include "edge-dns.namespace" . }}
+  labels:
+    {{- include "edge-dns.labels" . | nindent 4 }}
+    app.kubernetes.io/name: sniproxy
+    app.kubernetes.io/part-of: edge-dns
+spec:
+  type: {{ .Values.sniproxy.serviceType }}
+  externalTrafficPolicy: Local
+  ports:
+    - port: {{ .Values.sniproxy.port }}
+      targetPort: {{ .Values.sniproxy.port }}
+      protocol: TCP
+      name: https
+  selector:
+    app.kubernetes.io/name: sniproxy
+    app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}

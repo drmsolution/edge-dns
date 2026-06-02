@@ -8,8 +8,9 @@ import (
 type LogStatus string
 
 const (
-	StatusAllowed LogStatus = "ALLOWED"
-	StatusBlocked LogStatus = "BLOCKED"
+	StatusAllowed  LogStatus = "ALLOWED"
+	StatusBlocked  LogStatus = "BLOCKED"
+	StatusRedirect LogStatus = "REDIRECTED"
 )
 
 type DNSLog struct {

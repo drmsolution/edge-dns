@@ -34,6 +34,11 @@ func (s *AdminService) SetupRouter() *gin.Engine {
 		api.POST("/rules", s.addRule)
 		api.DELETE("/rules", s.removeRule)
 		api.GET("/rules", s.listRules)
+
+		api.POST("/redirects", s.addRedirect)
+		api.DELETE("/redirects", s.removeRedirect)
+		api.GET("/redirects", s.listRedirects)
+
 		api.GET("/analytics/summary", s.analyticsSummary)
 		api.GET("/analytics/logs", s.analyticsLogs)
 	}
@@ -115,6 +120,83 @@ func (s *AdminService) listRules(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"user_id": userID, "domains": domains})
+}
+
+type redirectRequest struct {
+	UserID   string `json:"user_id" binding:"required"`
+	Domain   string `json:"domain" binding:"required"`
+	TargetIP string `json:"target_ip" binding:"required"`
+}
+
+func (s *AdminService) addRedirect(c *gin.Context) {
+	var req redirectRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	key := "user:settings:" + req.UserID + ":redirects"
+
+	if err := s.rdb.HSet(ctx, key, req.Domain, req.TargetIP).Err(); err != nil {
+		slog.Error("redis hset redirect", "key", key, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save redirect"})
+		return
+	}
+
+	if err := s.publishClearCache(ctx, req.UserID); err != nil {
+		slog.Error("redis publish", "error", err)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "redirect added"})
+}
+
+func (s *AdminService) removeRedirect(c *gin.Context) {
+	var req redirectRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	key := "user:settings:" + req.UserID + ":redirects"
+
+	if err := s.rdb.HDel(ctx, key, req.Domain).Err(); err != nil {
+		slog.Error("redis hdel redirect", "key", key, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to remove redirect"})
+		return
+	}
+
+	if err := s.publishClearCache(ctx, req.UserID); err != nil {
+		slog.Error("redis publish", "error", err)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "redirect removed"})
+}
+
+func (s *AdminService) listRedirects(c *gin.Context) {
+	userID := c.Query("user_id")
+	if userID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "user_id query parameter is required"})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	key := "user:settings:" + userID + ":redirects"
+	redirects, err := s.rdb.HGetAll(ctx, key).Result()
+	if err != nil {
+		slog.Error("redis hgetall redirects", "key", key, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list redirects"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"user_id": userID, "redirects": redirects})
 }
 
 type summaryRow struct {

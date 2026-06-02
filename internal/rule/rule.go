@@ -1,6 +1,7 @@
 package rule
 
 import (
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync/atomic"
@@ -32,6 +33,34 @@ func CheckRule(userID string, domain string) int {
 		}
 	}
 	return 0
+}
+
+func GetRedirectDomain(userID, domain string) (string, bool) {
+	if global != nil {
+		return global.GetRedirect(userID, domain)
+	}
+	return "", false
+}
+
+func SetRedirectRule(userID, domain, targetIP string) error {
+	if global != nil {
+		return global.SetRedirect(userID, domain, targetIP)
+	}
+	return fmt.Errorf("checker not initialized")
+}
+
+func RemoveRedirectRule(userID, domain string) error {
+	if global != nil {
+		return global.RemoveRedirect(userID, domain)
+	}
+	return fmt.Errorf("checker not initialized")
+}
+
+func ListRedirectRules(userID string) (map[string]string, error) {
+	if global != nil {
+		return global.ListRedirects(userID)
+	}
+	return nil, fmt.Errorf("checker not initialized")
 }
 
 func ClearUserCache(userID string) {

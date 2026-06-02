@@ -98,6 +98,24 @@ admin-api:
       initialDelaySeconds: 5
       periodSeconds: 10
 
+# ── SNI Proxy ──
+sniproxy:
+  enabled: false
+  replicas: 1
+  port: 443
+  serviceType: LoadBalancer
+  strategy:
+    type: RollingUpdate
+    maxUnavailable: 0
+    maxSurge: 1
+  resources:
+    requests:
+      cpu: 200m
+      memory: 128Mi
+    limits:
+      cpu: 1
+      memory: 512Mi
+
 # ── Monitoring ──
 monitoring:
   prometheus:

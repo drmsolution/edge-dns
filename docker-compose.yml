@@ -74,6 +74,17 @@ services:
       CLICKHOUSE_ADDR: clickhouse:9000
       ADMIN_API_ADDR: ":8080"
 
+  sniproxy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    entrypoint: ["/app/sniproxy"]
+    restart: unless-stopped
+    ports:
+      - "443:443/tcp"
+    environment:
+      SNI_PROXY_ADDR: ":443"
+
 volumes:
   redis_data:
   clickhouse_data:

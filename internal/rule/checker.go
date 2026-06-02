@@ -2,6 +2,7 @@ package rule
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -137,14 +138,103 @@ func (c *Checker) SeedUserBlocklist(userID string, domains []string) {
 
 func (c *Checker) ClearUserCache(userID string) {
 	prefix := userID + ":"
+	redirectPrefix := "redirect:" + userID + ":"
 	var count int
 	for k := range c.cache.Items() {
-		if strings.HasPrefix(k, prefix) {
+		if strings.HasPrefix(k, prefix) || strings.HasPrefix(k, redirectPrefix) {
 			c.cache.Delete(k)
 			count++
 		}
 	}
 	slog.Info("cleared cache", "user_id", userID, "entries", count)
+}
+
+func (c *Checker) GetRedirect(userID, domain string) (string, bool) {
+	domain = strings.TrimSuffix(domain, ".")
+	domain = strings.ToLower(domain)
+
+	cacheKey := "redirect:" + userID + ":" + domain
+
+	if val, found := c.cache.Get(cacheKey); found {
+		ip, ok := val.(string)
+		return ip, ok
+	}
+
+	if c.enabled {
+		ip, err := c.redisGetRedirect(userID, domain)
+		if err == nil {
+			if ip != "" {
+				c.cache.Set(cacheKey, ip, cache.DefaultExpiration)
+				return ip, true
+			}
+			c.cache.Set(cacheKey, "", cache.DefaultExpiration)
+			return "", false
+		}
+		slog.Warn("redis redirect query failed", "user_id", userID, "domain", domain, "error", err)
+	}
+
+	return "", false
+}
+
+func (c *Checker) redisGetRedirect(userID, domain string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	key := "user:settings:" + userID + ":redirects"
+	patterns := generatePatterns(domain)
+
+	for _, pattern := range patterns {
+		ip, err := c.rdb.HGet(ctx, key, pattern).Result()
+		if err == redis.Nil {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		if ip != "" {
+			return ip, nil
+		}
+	}
+
+	return "", nil
+}
+
+func (c *Checker) SetRedirect(userID, domain, targetIP string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	domain = strings.ToLower(strings.TrimSuffix(domain, "."))
+	key := "user:settings:" + userID + ":redirects"
+
+	if err := c.rdb.HSet(ctx, key, domain, targetIP).Err(); err != nil {
+		return fmt.Errorf("hset redirect: %w", err)
+	}
+
+	c.cache.Delete("redirect:" + userID + ":" + domain)
+	return nil
+}
+
+func (c *Checker) RemoveRedirect(userID, domain string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	domain = strings.ToLower(strings.TrimSuffix(domain, "."))
+	key := "user:settings:" + userID + ":redirects"
+
+	if err := c.rdb.HDel(ctx, key, domain).Err(); err != nil {
+		return fmt.Errorf("hdel redirect: %w", err)
+	}
+
+	c.cache.Delete("redirect:" + userID + ":" + domain)
+	return nil
+}
+
+func (c *Checker) ListRedirects(userID string) (map[string]string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	key := "user:settings:" + userID + ":redirects"
+	return c.rdb.HGetAll(ctx, key).Result()
 }
 
 func (c *Checker) Close() error {

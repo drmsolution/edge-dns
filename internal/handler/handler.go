@@ -77,7 +77,12 @@ func (h *Handler) ProcessQuery(userID string, w dns.ResponseWriter, msg *dns.Msg
 		writeBlockResponse(w, msg, q)
 		status = analytics.StatusBlocked
 	default:
-		forwardResponse(w, msg)
+		if redirectIP, ok := rule.GetRedirectDomain(userID, domain); ok {
+			writeRedirectResponse(w, msg, q, redirectIP)
+			status = analytics.StatusRedirect
+		} else {
+			forwardResponse(w, msg)
+		}
 	}
 
 	elapsed := time.Since(start)
@@ -175,6 +180,38 @@ func writeBlockResponse(w dns.ResponseWriter, msg *dns.Msg, q dns.Question) {
 
 	if err := w.WriteMsg(resp); err != nil {
 		slog.Error("write block response", "error", err)
+	}
+}
+
+func writeRedirectResponse(w dns.ResponseWriter, msg *dns.Msg, q dns.Question, redirectIP string) {
+	resp := new(dns.Msg)
+	resp.SetReply(msg)
+	resp.Rcode = dns.RcodeSuccess
+
+	ip := net.ParseIP(redirectIP)
+	if ip == nil || ip.To4() == nil {
+		slog.Warn("invalid redirect IP, not an IPv4 address", "ip", redirectIP)
+		forwardResponse(w, msg)
+		return
+	}
+
+	rr := &dns.A{
+		Hdr: dns.RR_Header{
+			Name:   q.Name,
+			Rrtype: dns.TypeA,
+			Class:  dns.ClassINET,
+			Ttl:    60,
+		},
+		A: ip,
+	}
+	resp.Answer = append(resp.Answer, rr)
+
+	if q.Qtype == dns.TypeAAAA {
+		resp.Answer = nil
+	}
+
+	if err := w.WriteMsg(resp); err != nil {
+		slog.Error("write redirect response", "error", err, "remote", w.RemoteAddr())
 	}
 }
 
