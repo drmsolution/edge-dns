@@ -1,0 +1,21 @@
+{{- if .Values.monitoring.prometheus.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: {{ include "edge-dns.namespace" . }}
+  labels:
+    {{- include "edge-dns.labels" . | nindent 4 }}
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/part-of: edge-dns
+spec:
+  type: ClusterIP
+  ports:
+    - port: 9090
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}

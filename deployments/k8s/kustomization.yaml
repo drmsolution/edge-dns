@@ -13,3 +13,11 @@ resources:
   - clickhouse-service.yaml
   - edge-dns-deployment.yaml
   - admin-api-deployment.yaml
+  - prometheus-config.yaml
+  - prometheus-deployment.yaml
+  - prometheus-service.yaml
+  - prometheus-rbac.yaml
+  - grafana-config.yaml
+  - grafana-dashboard-provisioning.yaml
+  - grafana-deployment.yaml
+  - grafana-service.yaml

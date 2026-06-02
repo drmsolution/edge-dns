@@ -1,0 +1,75 @@
+{{- if .Values.monitoring.grafana.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: {{ include "edge-dns.namespace" . }}
+  labels:
+    {{- include "edge-dns.labels" . | nindent 4 }}
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/part-of: edge-dns
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: grafana
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: grafana
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/part-of: edge-dns
+    spec:
+      containers:
+        - name: grafana
+          image: {{ .Values.monitoring.grafana.image }}
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+              name: http
+          env:
+            - name: GF_PATHS_PROVISIONING
+              value: /etc/grafana/provisioning
+            - name: GF_PATHS_CONFIG
+              value: /etc/grafana/grafana.ini
+          volumeMounts:
+            - name: datasources
+              mountPath: /etc/grafana/provisioning/datasources
+            - name: dashboards-config
+              mountPath: /etc/grafana/provisioning/dashboards
+            - name: dashboards-data
+              mountPath: /var/lib/grafana/dashboards
+            - name: ini
+              mountPath: /etc/grafana/grafana.ini
+              subPath: grafana.ini
+          resources:
+            {{- toYaml .Values.monitoring.grafana.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: datasources
+          configMap:
+            name: {{ include "edge-dns.fullname" . }}-grafana-datasources
+        - name: dashboards-config
+          configMap:
+            name: {{ include "edge-dns.fullname" . }}-grafana-dashboards-config
+        - name: dashboards-data
+          configMap:
+            name: {{ include "edge-dns.fullname" . }}-grafana-dashboard-edge-dns
+        - name: ini
+          configMap:
+            name: {{ include "edge-dns.fullname" . }}-grafana-ini
+{{- end }}

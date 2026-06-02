@@ -13,3 +13,15 @@ To get the LoadBalancer IP:
 To port-forward the Admin API locally:
   kubectl -n {{ include "edge-dns.namespace" . }} port-forward svc/{{ include "admin-api.name" . }} {{ .Values.admin-api.port }}:{{ .Values.admin-api.port }}
   curl http://localhost:{{ .Values.admin-api.port }}/api/v1/analytics/summary
+
+{{- if .Values.monitoring.prometheus.enabled }}
+Prometheus is available at prometheus:9090
+  kubectl -n {{ include "edge-dns.namespace" . }} port-forward svc/prometheus 9090:9090
+  open http://localhost:9090
+{{- end }}
+
+{{- if .Values.monitoring.grafana.enabled }}
+Grafana is available at grafana:3000 (admin/admin)
+  kubectl -n {{ include "edge-dns.namespace" . }} port-forward svc/grafana 3000:3000
+  open http://localhost:3000
+{{- end }}

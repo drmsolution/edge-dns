@@ -1,0 +1,186 @@
+{{- if .Values.monitoring.grafana.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "edge-dns.fullname" . }}-grafana-datasources
+  namespace: {{ include "edge-dns.namespace" . }}
+  labels:
+    {{- include "edge-dns.labels" . | nindent 4 }}
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/part-of: edge-dns
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus:9090
+        isDefault: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "edge-dns.fullname" . }}-grafana-dashboard-edge-dns
+  namespace: {{ include "edge-dns.namespace" . }}
+  labels:
+    {{- include "edge-dns.labels" . | nindent 4 }}
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/part-of: edge-dns
+    grafana_dashboard: "1"
+data:
+  edge-dns.json: |
+    {
+      "__inputs": [],
+      "__requires": [],
+      "title": "Edge DNS",
+      "uid": "edge-dns",
+      "version": 1,
+      "timezone": "browser",
+      "tags": ["edge-dns"],
+      "schemaVersion": 39,
+      "panels": [
+        {
+          "title": "DNS Queries per Second",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+          "targets": [{
+            "expr": "sum(rate(dns_queries_total[1m]))",
+            "legendFormat": "total"
+          }],
+          "fieldConfig": {
+            "defaults": {"unit": "reqps", "color": {"mode": "palette-classic"}}
+          }
+        },
+        {
+          "title": "Queries by Protocol",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+          "targets": [{
+            "expr": "sum(rate(dns_queries_total[1m])) by (protocol)",
+            "legendFormat": "{{`{{protocol}}`}}"
+          }],
+          "fieldConfig": {
+            "defaults": {"unit": "reqps", "color": {"mode": "palette-classic"}}
+          }
+        },
+        {
+          "title": "Query Duration (p50 / p95 / p99)",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.50, sum(rate(dns_query_duration_seconds_bucket[1m])) by (le))",
+              "legendFormat": "p50"
+            },
+            {
+              "expr": "histogram_quantile(0.95, sum(rate(dns_query_duration_seconds_bucket[1m])) by (le))",
+              "legendFormat": "p95"
+            },
+            {
+              "expr": "histogram_quantile(0.99, sum(rate(dns_query_duration_seconds_bucket[1m])) by (le))",
+              "legendFormat": "p99"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {"unit": "s", "color": {"mode": "palette-classic"}}
+          }
+        },
+        {
+          "title": "Queries by Status",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+          "targets": [{
+            "expr": "sum(rate(dns_queries_total[1m])) by (status)",
+            "legendFormat": "{{`{{status}}`}}"
+          }],
+          "fieldConfig": {
+            "defaults": {"unit": "reqps", "color": {"mode": "palette-classic"}}
+          }
+        },
+        {
+          "title": "Analytics Dropped Logs",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+          "targets": [{
+            "expr": "rate(analytics_dropped_logs_total[1m])",
+            "legendFormat": "dropped"
+          }],
+          "fieldConfig": {
+            "defaults": {"unit": "reqps", "color": {"mode": "palette-classic"}}
+          }
+        },
+        {
+          "title": "Active Endpoints (UP)",
+          "type": "stat",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+          "targets": [{
+            "expr": "count(up{job='edge-dns'})",
+            "legendFormat": "up"
+          }],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "color": {"mode": "thresholds"},
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "red", "value": null},
+                  {"color": "green", "value": 1}
+                ]
+              }
+            }
+          }
+        }
+      ]
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "edge-dns.fullname" . }}-grafana-ini
+  namespace: {{ include "edge-dns.namespace" . }}
+  labels:
+    {{- include "edge-dns.labels" . | nindent 4 }}
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/part-of: edge-dns
+data:
+  grafana.ini: |
+    [server]
+    root_url = %(protocol)s://%(domain)s:%(http_port)s/
+    serve_from_sub_path = true
+
+    [auth]
+    disable_login_form = false
+    disable_signout_menu = false
+
+    [auth.anonymous]
+    enabled = true
+    org_role = Viewer
+
+    [security]
+    admin_user = admin
+    admin_password = admin
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "edge-dns.fullname" . }}-grafana-dashboards-config
+  namespace: {{ include "edge-dns.namespace" . }}
+  labels:
+    {{- include "edge-dns.labels" . | nindent 4 }}
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/part-of: edge-dns
+data:
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: "edge-dns"
+        orgId: 1
+        folder: ""
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards
+{{- end }}

@@ -97,3 +97,32 @@ admin-api:
     readiness:
       initialDelaySeconds: 5
       periodSeconds: 10
+
+# ── Monitoring ──
+monitoring:
+  prometheus:
+    enabled: false
+    image: prom/prometheus:v2.55.0
+    scrapeInterval: 15s
+    evaluationInterval: 15s
+    retention: 30d
+    storageSize: 10Gi
+    storageClass: ""
+    resources:
+      requests:
+        cpu: 300m
+        memory: 512Mi
+      limits:
+        cpu: 1
+        memory: 2Gi
+  grafana:
+    enabled: false
+    image: grafana/grafana:11.2.0
+    serviceType: ClusterIP
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
