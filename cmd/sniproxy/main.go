@@ -16,14 +16,14 @@ import (
 )
 
 const (
-	recordTypeHandshake       = 22
-	handshakeTypeClientHello  = 1
-	extensionTypeSNI          = 0
-	sniNameTypeHost           = 0
-	tcpKeepAlive              = 30 * time.Second
-	defaultReadTimeout        = 10 * time.Second
-	defaultIdleTimeout        = 120 * time.Second
-	defaultBufSize            = 65535
+	recordTypeHandshake      = 22
+	handshakeTypeClientHello = 1
+	extensionTypeSNI         = 0
+	sniNameTypeHost          = 0
+	tcpKeepAlive             = 30 * time.Second
+	defaultReadTimeout       = 10 * time.Second
+	defaultIdleTimeout       = 120 * time.Second
+	defaultBufSize           = 65535
 )
 
 type Proxy struct {
@@ -41,7 +41,7 @@ func NewProxy(addr string) *Proxy {
 			Timeout:   10 * time.Second,
 			KeepAlive: tcpKeepAlive,
 		},
-		resolver:   net.DefaultResolver,
+		resolver:    net.DefaultResolver,
 		readTimeout: defaultReadTimeout,
 		idleTimeout: defaultIdleTimeout,
 	}

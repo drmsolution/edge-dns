@@ -1,0 +1,74 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-alerts
+  namespace: edge-dns
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/part-of: edge-dns
+data:
+  alerts.yml: |
+    groups:
+      - name: edge-dns
+        interval: 30s
+        rules:
+
+          - alert: HighErrorRate
+            expr: |
+              rate(dns_queries_total{status="blocked"}[5m])
+              /
+              rate(dns_queries_total[5m]) > 0.5
+            for: 2m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High blocked-query ratio ({{ $value | humanizePercentage }})"
+              description: "Over 50% of DNS queries are blocked in the last 5 minutes."
+
+          - alert: RateLimitThrottling
+            expr: |
+              rate(dns_queries_total{status="refused"}[5m]) > 10
+            for: 1m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Rate limit throttling active"
+              description: "More than 10 queries/sec are being rate-limited."
+
+          - alert: AnalyticsDroppingLogs
+            expr: |
+              rate(analytics_dropped_logs_total[5m]) > 100
+            for: 2m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Analytics logs being dropped"
+              description: "ClickHouse is not keeping up — {{ $value | humanize }} logs/sec dropped."
+
+          - alert: HighQueryLatency
+            expr: |
+              histogram_quantile(0.99, rate(dns_query_duration_seconds_bucket[5m])) > 2
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High DNS query latency (p99 > 2s)"
+              description: "99th percentile DNS query latency is {{ $value }}s."
+
+          - alert: InstanceDown
+            expr: up{job="edge-dns"} == 0
+            for: 1m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Edge DNS instance {{ $labels.pod }} is down"
+              description: "Pod {{ $labels.pod }} has been unreachable for over 1 minute."
+
+          - alert: NoMetrics
+            expr: absent(rate(dns_queries_total[5m]))
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: "No DNS query metrics received"
+              description: "No DNS query data in the last 5 minutes — check edge-dns process."
