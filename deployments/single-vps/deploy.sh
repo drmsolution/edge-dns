@@ -41,6 +41,12 @@ EOF
 step_system() {
   info "[1/6] Cập nhật hệ thống và cài đặt packages..."
 
+  OS_CODENAME=$(grep VERSION_CODENAME /etc/os-release | cut -d= -f2)
+  if [ "$OS_CODENAME" = "focal" ]; then
+    warn "Ubuntu 20.04 (focal) đã EOL — khuyến nghị nâng cấp lên Ubuntu 22.04+"
+    warn "Script vẫn cố cài tiếp nhưng có thể gặp lỗi apt."
+  fi
+
   apt update -qq && apt upgrade -y -qq
   apt install -y -qq curl gnupg apt-transport-https ca-certificates \
     git jq htop netcat-openbsd ufw
@@ -72,15 +78,29 @@ step_docker() {
 
   if command -v docker &>/dev/null; then
     info "Docker đã có, bỏ qua"
-  else
-    curl -fsSL https://get.docker.com | sh
+    systemctl enable --now docker
+    return
   fi
-  systemctl enable --now docker
 
-  # Compose plugin
-  docker compose version &>/dev/null || {
-    apt install -y -qq docker-compose-plugin
-  }
+  OS_CODENAME=$(grep VERSION_CODENAME /etc/os-release | cut -d= -f2)
+  if [ "$OS_CODENAME" = "focal" ]; then
+    warn "Ubuntu 20.04 (focal) đã EOL — Docker apt repo không còn hỗ trợ chính thức."
+    warn "Vẫn cài được nhưng sẽ dùng Docker package từ archive. Nếu lỗi, hãy nâng cấp lên Ubuntu 22.04+"
+  fi
+
+  # Cài Docker từ apt repo chính thức (không dùng get.docker.com convenience script)
+  install -m 0755 -d /etc/apt/keyrings
+  curl -fsSL "https://download.docker.com/linux/ubuntu/gpg" -o /etc/apt/keyrings/docker.asc
+  chmod a+r /etc/apt/keyrings/docker.asc
+  echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $OS_CODENAME stable" \
+    > /etc/apt/sources.list.d/docker.list
+
+  apt update -qq
+  DEBIAN_FRONTEND=noninteractive apt install -y -qq \
+    docker-ce docker-ce-cli containerd.io \
+    docker-compose-plugin docker-buildx-plugin
+
+  systemctl enable --now docker
 }
 
 # ─── Step 3: Clone repo ─────────────────────────────────────────────────────
