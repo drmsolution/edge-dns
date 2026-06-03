@@ -78,21 +78,24 @@ func (c *Checker) Check(userID, domain string) int {
 		return 0
 	}
 
+	blocked := false
 	if c.enabled {
-		blocked, err := c.checkRedis(domain, userID)
-		if err == nil {
-			c.cache.Set(cacheKey, blocked, cache.DefaultExpiration)
-			if blocked {
-				return 1
-			}
-			return 0
+		var err error
+		blocked, err = c.checkRedis(domain, userID)
+		if err != nil {
+			slog.Warn("redis query failed, fallback", "user_id", userID, "domain", domain, "error", err)
 		}
-		slog.Warn("redis query failed, fallback", "user_id", userID, "domain", domain, "error", err)
 	}
 
-	blocked := c.fallbackCheck(domain)
-	c.cache.Set(cacheKey, blocked == 1, cache.DefaultExpiration)
-	return blocked
+	if !blocked {
+		blocked = c.fallbackCheck(domain) == 1
+	}
+
+	c.cache.Set(cacheKey, blocked, cache.DefaultExpiration)
+	if blocked {
+		return 1
+	}
+	return 0
 }
 
 func (c *Checker) checkRedis(domain, userID string) (bool, error) {
