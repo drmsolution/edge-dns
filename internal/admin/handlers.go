@@ -56,6 +56,8 @@ func (s *AdminService) SetupRouter() *gin.Engine {
 	r.Use(gin.Recovery())
 	r.Use(gin.Logger())
 
+	r.GET("/", s.dashboardHandler)
+
 	api := r.Group("/api/v1")
 	api.Use(s.authMiddleware())
 	{

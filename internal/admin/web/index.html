@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Edge DNS Dashboard</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+.tab-active { border-bottom: 2px solid #3b82f6; color: #3b82f6; }
+.modal { background: rgba(0,0,0,0.5); }
+.alert-enter { animation: slideDown 0.3s ease; }
+@keyframes slideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+</style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+<div id="app"></div>
+
+<script>
+const API_BASE = '/api/v1';
+
+function getToken() { return localStorage.getItem('edge_dns_token') }
+function setToken(t) { if (t) localStorage.setItem('edge_dns_token', t); else localStorage.removeItem('edge_dns_token') }
+
+async function api(method, path, body) {
+  const headers = { 'Content-Type': 'application/json' };
+  const token = getToken();
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  const res = await fetch(API_BASE + path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  if (res.status === 401) { setToken(null); render(); throw new Error('Unauthorized') }
+  return res.json();
+}
+
+function html(strings, ...vals) {
+  let r = '';
+  strings.forEach((s, i) => { r += s + (vals[i] !== undefined ? vals[i] : '') });
+  return r;
+}
+
+function escape(s) {
+  if (s === null || s === undefined) return '';
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function alert(msg, type) {
+  const colors = { success: 'bg-green-500', error: 'bg-red-500', info: 'bg-blue-500' };
+  const el = document.getElementById('alert');
+  el.innerHTML = '<div class="alert-enter ' + (colors[type] || 'bg-blue-500') + ' text-white px-4 py-3 rounded shadow-lg">' + escape(msg) + '</div>';
+  setTimeout(() => el.innerHTML = '', 4000);
+}
+
+let state = { tab: 'rules', rules: [], redirects: [], summary: [], logs: [], userID: '' };
+
+function render() {
+  const token = getToken();
+  document.getElementById('app').innerHTML = token ? renderDashboard() : renderLogin();
+}
+
+function renderLogin() {
+  return html`
+    <div class="min-h-screen flex items-center justify-center">
+      <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-sm">
+        <div class="text-center mb-6">
+          <div class="text-4xl mb-2">&#x1F310;</div>
+          <h1 class="text-2xl font-bold text-gray-800">Edge DNS</h1>
+          <p class="text-gray-500 text-sm mt-1">Smart DNS Dashboard</p>
+        </div>
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Server URL</label>
+            <input id="serverUrl" value="${escape(window.location.origin)}" class="w-full border rounded-lg px-3 py-2 text-sm bg-gray-50" readonly>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+            <input id="apiKey" type="password" placeholder="Enter your admin API key" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none">
+          </div>
+          <button onclick="login()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition">Sign In</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function login() {
+  const key = document.getElementById('apiKey').value.trim();
+  if (!key) return alert('Please enter API key', 'error');
+  setToken(key);
+  try {
+    await api('GET', '/rules?user_id=_verify');
+    render();
+    loadData();
+  } catch (e) {
+    setToken(null);
+    alert('Invalid API key', 'error');
+  }
+}
+
+function renderDashboard() {
+  return html`
+    <div class="max-w-6xl mx-auto px-4 py-6">
+      <!-- Header -->
+      <div class="flex items-center justify-between mb-6">
+        <div>
+          <h1 class="text-2xl font-bold text-gray-800">Edge DNS</h1>
+          <p class="text-gray-500 text-sm">Smart DNS Dashboard</p>
+        </div>
+        <button onclick="logout()" class="text-sm text-gray-500 hover:text-red-600 border px-3 py-1.5 rounded-lg transition">Sign Out</button>
+      </div>
+
+      <!-- Tabs -->
+      <div class="flex gap-6 border-b mb-6">
+        <button class="pb-2 px-1 text-sm font-medium ${state.tab === 'rules' ? 'tab-active text-blue-600' : 'text-gray-500 hover:text-gray-700'}" onclick="switchTab('rules')">Block Rules</button>
+        <button class="pb-2 px-1 text-sm font-medium ${state.tab === 'redirects' ? 'tab-active text-blue-600' : 'text-gray-500 hover:text-gray-700'}" onclick="switchTab('redirects')">Redirects</button>
+        <button class="pb-2 px-1 text-sm font-medium ${state.tab === 'analytics' ? 'tab-active text-blue-600' : 'text-gray-500 hover:text-gray-700'}" onclick="switchTab('analytics')">Analytics</button>
+      </div>
+
+      <!-- Alert -->
+      <div id="alert" class="fixed top-4 right-4 z-50"></div>
+
+      <!-- Content -->
+      <div id="content">${renderContent()}</div>
+    </div>`;
+}
+
+function switchTab(tab) {
+  state.tab = tab;
+  render();
+  loadData();
+}
+
+function renderContent() {
+  switch (state.tab) {
+    case 'rules': return renderRules();
+    case 'redirects': return renderRedirects();
+    case 'analytics': return renderAnalytics();
+  }
+}
+
+/* ─── Rules ─── */
+
+function renderRules() {
+  return html`
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <!-- Add Rule -->
+      <div class="bg-white rounded-xl shadow-sm border p-6">
+        <h2 class="text-lg font-semibold text-gray-800 mb-4">Add Block Rule</h2>
+        <div class="space-y-3">
+          <div>
+            <label class="block text-sm text-gray-600 mb-1">User ID</label>
+            <input id="ruleUser" value="${escape(state.userID)}" placeholder="e.g. user1" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-sm text-gray-600 mb-1">Domain</label>
+            <input id="ruleDomain" placeholder="e.g. facebook.com" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+          </div>
+          <button onclick="addRule()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition text-sm">Add Rule</button>
+        </div>
+      </div>
+
+      <!-- Rule List -->
+      <div class="lg:col-span-2 bg-white rounded-xl shadow-sm border p-6">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-lg font-semibold text-gray-800">Blocked Domains</h2>
+          <div class="flex gap-2">
+            <input id="ruleFilterUser" value="${escape(state.userID)}" placeholder="User ID" class="border rounded-lg px-3 py-1.5 text-sm w-32 focus:ring-2 focus:ring-blue-500 outline-none">
+            <button onclick="loadRules()" class="bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-1.5 px-3 rounded-lg text-sm transition">Refresh</button>
+          </div>
+        </div>
+        <div id="ruleList" class="space-y-1">${state.rules.length === 0 ? '<p class="text-gray-400 text-sm py-4 text-center">No blocked domains yet</p>' : state.rules.map(d => html`
+          <div class="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-gray-50 group">
+            <span class="text-sm font-mono text-gray-700">${escape(d)}</span>
+            <button onclick="removeRule('${escape(d)}')" class="text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition text-sm font-medium">Remove</button>
+          </div>
+        `).join('')}</div>
+      </div>
+    </div>`;
+}
+
+async function addRule() {
+  const userID = document.getElementById('ruleUser').value.trim();
+  const domain = document.getElementById('ruleDomain').value.trim();
+  if (!userID || !domain) return alert('Fill in all fields', 'error');
+  state.userID = userID;
+  try {
+    await api('POST', '/rules', { user_id: userID, domain, action: 'block' });
+    alert('Rule added', 'success');
+    document.getElementById('ruleDomain').value = '';
+    loadRules();
+  } catch (e) { alert('Failed to add rule', 'error') }
+}
+
+async function removeRule(domain) {
+  try {
+    await api('DELETE', '/rules', { user_id: state.userID, domain, action: 'block' });
+    alert('Rule removed', 'success');
+    loadRules();
+  } catch (e) { alert('Failed to remove rule', 'error') }
+}
+
+async function loadRules() {
+  const uid = document.getElementById('ruleFilterUser').value.trim() || state.userID;
+  if (!uid) return;
+  state.userID = uid;
+  try {
+    const res = await api('GET', '/rules?user_id=' + encodeURIComponent(uid));
+    state.rules = res.domains || [];
+    render();
+  } catch (e) { /* ignore */ }
+}
+
+/* ─── Redirects ─── */
+
+function renderRedirects() {
+  return html`
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <!-- Add Redirect -->
+      <div class="bg-white rounded-xl shadow-sm border p-6">
+        <h2 class="text-lg font-semibold text-gray-800 mb-4">Add Redirect</h2>
+        <div class="space-y-3">
+          <div>
+            <label class="block text-sm text-gray-600 mb-1">User ID</label>
+            <input id="redirUser" value="${escape(state.userID)}" placeholder="e.g. user1" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-sm text-gray-600 mb-1">Domain</label>
+            <input id="redirDomain" placeholder="e.g. netflix.com" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-sm text-gray-600 mb-1">Target IP</label>
+            <input id="redirIP" placeholder="e.g. 10.0.0.1" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+          </div>
+          <button onclick="addRedirect()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition text-sm">Add Redirect</button>
+        </div>
+      </div>
+
+      <!-- Redirect List -->
+      <div class="lg:col-span-2 bg-white rounded-xl shadow-sm border p-6">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-lg font-semibold text-gray-800">Domain Redirects</h2>
+          <div class="flex gap-2">
+            <input id="redirFilterUser" value="${escape(state.userID)}" placeholder="User ID" class="border rounded-lg px-3 py-1.5 text-sm w-32 focus:ring-2 focus:ring-blue-500 outline-none">
+            <button onclick="loadRedirects()" class="bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-1.5 px-3 rounded-lg text-sm transition">Refresh</button>
+          </div>
+        </div>
+        <div id="redirList">${Object.keys(state.redirects).length === 0 ? '<p class="text-gray-400 text-sm py-4 text-center">No redirects configured</p>' : Object.entries(state.redirects).map(([d, ip]) => html`
+          <div class="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-gray-50 group">
+            <div>
+              <span class="text-sm font-mono text-gray-700">${escape(d)}</span>
+              <span class="text-gray-400 mx-2">&#8594;</span>
+              <span class="text-sm font-mono text-blue-600">${escape(ip)}</span>
+            </div>
+            <button onclick="removeRedirect('${escape(d)}')" class="text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition text-sm font-medium">Remove</button>
+          </div>
+        `).join('')}</div>
+      </div>
+    </div>`;
+}
+
+async function addRedirect() {
+  const userID = document.getElementById('redirUser').value.trim();
+  const domain = document.getElementById('redirDomain').value.trim();
+  const targetIP = document.getElementById('redirIP').value.trim();
+  if (!userID || !domain || !targetIP) return alert('Fill in all fields', 'error');
+  state.userID = userID;
+  try {
+    await api('POST', '/redirects', { user_id: userID, domain, target_ip: targetIP });
+    alert('Redirect added', 'success');
+    document.getElementById('redirDomain').value = '';
+    document.getElementById('redirIP').value = '';
+    loadRedirects();
+  } catch (e) { alert('Failed to add redirect', 'error') }
+}
+
+async function removeRedirect(domain) {
+  try {
+    await api('DELETE', '/redirects', { user_id: state.userID, domain, target_ip: '' });
+    alert('Redirect removed', 'success');
+    loadRedirects();
+  } catch (e) { alert('Failed to remove redirect', 'error') }
+}
+
+async function loadRedirects() {
+  const uid = document.getElementById('redirFilterUser').value.trim() || state.userID;
+  if (!uid) return;
+  state.userID = uid;
+  try {
+    const res = await api('GET', '/redirects?user_id=' + encodeURIComponent(uid));
+    state.redirects = res.redirects || {};
+    render();
+  } catch (e) { /* ignore */ }
+}
+
+/* ─── Analytics ─── */
+
+function renderAnalytics() {
+  return html`
+    <div class="space-y-6">
+      <!-- User selector -->
+      <div class="bg-white rounded-xl shadow-sm border p-4 flex items-center gap-4">
+        <label class="text-sm font-medium text-gray-700">User ID</label>
+        <input id="analyticsUser" value="${escape(state.userID)}" placeholder="e.g. user1" class="border rounded-lg px-3 py-1.5 text-sm w-40 focus:ring-2 focus:ring-blue-500 outline-none">
+        <button onclick="loadAnalytics()" class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-1.5 px-4 rounded-lg text-sm transition">Load</button>
+      </div>
+
+      <!-- Summary cards -->
+      <div id="summaryCards" class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="bg-white rounded-xl shadow-sm border p-4 text-center">
+          <div class="text-3xl font-bold text-gray-700">-</div>
+          <div class="text-sm text-gray-500 mt-1">Total Queries</div>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border p-4 text-center">
+          <div class="text-3xl font-bold text-green-600">-</div>
+          <div class="text-sm text-gray-500 mt-1">Allowed</div>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border p-4 text-center">
+          <div class="text-3xl font-bold text-red-600">-</div>
+          <div class="text-sm text-gray-500 mt-1">Blocked</div>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border p-4 text-center">
+          <div class="text-3xl font-bold text-blue-600">-</div>
+          <div class="text-sm text-gray-500 mt-1">Redirected</div>
+        </div>
+      </div>
+
+      <!-- Recent logs -->
+      <div class="bg-white rounded-xl shadow-sm border p-6">
+        <h2 class="text-lg font-semibold text-gray-800 mb-4">Recent Queries</h2>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-left text-gray-500 border-b">
+                <th class="pb-2 pr-4 font-medium">Time</th>
+                <th class="pb-2 pr-4 font-medium">Domain</th>
+                <th class="pb-2 pr-4 font-medium">Type</th>
+                <th class="pb-2 pr-4 font-medium">Status</th>
+                <th class="pb-2 pr-4 font-medium">Client IP</th>
+                <th class="pb-2 font-medium">Latency</th>
+              </tr>
+            </thead>
+            <tbody>${state.logs.length === 0 ? '<tr><td colspan="6" class="py-6 text-center text-gray-400">No logs yet</td></tr>' : state.logs.map(l => html`
+              <tr class="border-b border-gray-100 hover:bg-gray-50">
+                <td class="py-2 pr-4 text-gray-600 whitespace-nowrap">${escape(l.timestamp ? new Date(l.timestamp).toLocaleTimeString() : '')}</td>
+                <td class="py-2 pr-4 font-mono text-gray-800">${escape(l.domain)}</td>
+                <td class="py-2 pr-4 text-gray-600">${escape(l.query_type)}</td>
+                <td class="py-2 pr-4">${statusBadge(l.status)}</td>
+                <td class="py-2 pr-4 text-gray-600 text-xs">${escape(l.client_ip)}</td>
+                <td class="py-2 text-gray-600">${l.response_time_ns ? (l.response_time_ns / 1000000).toFixed(1) + 'ms' : '-'}</td>
+              </tr>
+            `).join('')}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>`;
+}
+
+function statusBadge(s) {
+  const colors = { allowed: 'bg-green-100 text-green-700', blocked: 'bg-red-100 text-red-700', redirect: 'bg-blue-100 text-blue-700' };
+  return '<span class="' + (colors[s] || 'bg-gray-100 text-gray-700') + ' px-2 py-0.5 rounded-full text-xs font-medium">' + escape(s) + '</span>';
+}
+
+async function loadAnalytics() {
+  const uid = document.getElementById('analyticsUser').value.trim();
+  if (!uid) return;
+  state.userID = uid;
+  try {
+    const summary = await api('GET', '/analytics/summary?user_id=' + encodeURIComponent(uid));
+    const logs = await api('GET', '/analytics/logs?user_id=' + encodeURIComponent(uid) + '&limit=50');
+    state.summary = summary.summary || [];
+    state.logs = logs.logs || [];
+    updateSummaryCards();
+  } catch (e) { /* clickhouse may not be configured */ }
+}
+
+function updateSummaryCards() {
+  const cards = document.getElementById('summaryCards');
+  let total = 0, allowed = 0, blocked = 0, redirect = 0;
+  state.summary.forEach(s => {
+    if (s.status === 'allowed') allowed = s.count;
+    else if (s.status === 'blocked') blocked = s.count;
+    else if (s.status === 'redirect') redirect = s.count;
+  });
+  total = allowed + blocked + redirect;
+  cards.innerHTML = html`
+    <div class="bg-white rounded-xl shadow-sm border p-4 text-center">
+      <div class="text-3xl font-bold text-gray-700">${total}</div>
+      <div class="text-sm text-gray-500 mt-1">Total Queries</div>
+    </div>
+    <div class="bg-white rounded-xl shadow-sm border p-4 text-center">
+      <div class="text-3xl font-bold text-green-600">${allowed}</div>
+      <div class="text-sm text-gray-500 mt-1">Allowed</div>
+    </div>
+    <div class="bg-white rounded-xl shadow-sm border p-4 text-center">
+      <div class="text-3xl font-bold text-red-600">${blocked}</div>
+      <div class="text-sm text-gray-500 mt-1">Blocked</div>
+    </div>
+    <div class="bg-white rounded-xl shadow-sm border p-4 text-center">
+      <div class="text-3xl font-bold text-blue-600">${redirect}</div>
+      <div class="text-sm text-gray-500 mt-1">Redirected</div>
+    </div>`;
+}
+
+function logout() {
+  setToken(null);
+  state = { tab: 'rules', rules: [], redirects: [], summary: [], logs: [], userID: '' };
+  render();
+}
+
+function loadData() {
+  if (!getToken()) return;
+  if (state.tab === 'rules') loadRules();
+  else if (state.tab === 'redirects') loadRedirects();
+  else if (state.tab === 'analytics') { /* wait for user click */ }
+}
+
+render();
+</script>
+</body>
+</html>
