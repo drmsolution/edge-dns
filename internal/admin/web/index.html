@@ -21,6 +21,8 @@ const API_BASE = '/api/v1';
 
 function getToken() { return localStorage.getItem('edge_dns_token') }
 function setToken(t) { if (t) localStorage.setItem('edge_dns_token', t); else localStorage.removeItem('edge_dns_token') }
+function getLastUser() { return localStorage.getItem('edge_dns_user') || '' }
+function setLastUser(u) { if (u) localStorage.setItem('edge_dns_user', u) }
 
 async function api(method, path, body) {
   const headers = { 'Content-Type': 'application/json' };
@@ -51,7 +53,7 @@ function alert(msg, type) {
   setTimeout(() => el.innerHTML = '', 4000);
 }
 
-let state = { tab: 'rules', rules: [], redirects: [], summary: [], logs: [], userID: '' };
+let state = { tab: 'rules', rules: [], redirects: [], summary: [], logs: [], userID: getLastUser() };
 
 function render() {
   const token = getToken();
@@ -182,6 +184,7 @@ async function addRule() {
   const domain = document.getElementById('ruleDomain').value.trim();
   if (!userID || !domain) return alert('Fill in all fields', 'error');
   state.userID = userID;
+  setLastUser(userID);
   try {
     await api('POST', '/rules', { user_id: userID, domain, action: 'block' });
     alert('Rule added', 'success');
@@ -202,6 +205,7 @@ async function loadRules() {
   const uid = document.getElementById('ruleFilterUser').value.trim() || state.userID;
   if (!uid) return;
   state.userID = uid;
+  setLastUser(uid);
   try {
     const res = await api('GET', '/rules?user_id=' + encodeURIComponent(uid));
     state.rules = res.domains || [];
@@ -263,6 +267,7 @@ async function addRedirect() {
   const targetIP = document.getElementById('redirIP').value.trim();
   if (!userID || !domain || !targetIP) return alert('Fill in all fields', 'error');
   state.userID = userID;
+  setLastUser(userID);
   try {
     await api('POST', '/redirects', { user_id: userID, domain, target_ip: targetIP });
     alert('Redirect added', 'success');

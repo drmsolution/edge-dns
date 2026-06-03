@@ -3,12 +3,20 @@ package server
 import (
 	"context"
 	"log/slog"
+	"os"
 
 	"github.com/miekg/dns"
 	"github.com/user/edge-dns/internal/handler"
 )
 
 const DefaultUserID = "default"
+
+func envStdUserID() string {
+	if v := os.Getenv("STD_USER_ID"); v != "" {
+		return v
+	}
+	return DefaultUserID
+}
 
 type stdHandler struct {
 	userID string
@@ -19,7 +27,7 @@ func (h *stdHandler) ServeDNS(w dns.ResponseWriter, msg *dns.Msg) {
 }
 
 func RunStd(ctx context.Context, addr string) error {
-	h := &stdHandler{userID: DefaultUserID}
+	h := &stdHandler{userID: envStdUserID()}
 
 	udpSrv := &dns.Server{
 		Addr:    addr,
