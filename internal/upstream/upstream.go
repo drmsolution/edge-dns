@@ -3,24 +3,41 @@ package upstream
 import (
 	"fmt"
 	"log/slog"
-	"net"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/miekg/dns"
 )
 
-const UpstreamAddr = "1.1.1.1:53"
+var (
+	UpstreamAddr  = "1.1.1.1:53"
+	clientTimeout = 5 * time.Second
+	clientUDPSize = uint16(1232)
+)
 
 var client = &dns.Client{
 	Net:     "udp",
-	Timeout: 5 * time.Second,
-	UDPSize: 1232,
+	Timeout: clientTimeout,
+	UDPSize: clientUDPSize,
 }
 
 func init() {
-	if net.JoinHostPort("1.1.1.1", "53") != UpstreamAddr {
-		panic("upstream address mismatch")
+	if addr := os.Getenv("UPSTREAM_DNS"); addr != "" {
+		UpstreamAddr = addr
 	}
+	if t := os.Getenv("UPSTREAM_TIMEOUT"); t != "" {
+		if d, err := time.ParseDuration(t); err == nil {
+			clientTimeout = d
+		}
+	}
+	if s := os.Getenv("UPSTREAM_UDP_SIZE"); s != "" {
+		if n, err := strconv.ParseUint(s, 10, 16); err == nil && n > 0 {
+			clientUDPSize = uint16(n)
+		}
+	}
+	client.Timeout = clientTimeout
+	client.UDPSize = clientUDPSize
 }
 
 func Resolve(msg *dns.Msg) (*dns.Msg, error) {

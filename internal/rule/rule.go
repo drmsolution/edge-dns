@@ -1,10 +1,12 @@
 package rule
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"strings"
 	"sync/atomic"
+	"time"
 )
 
 var global *Checker
@@ -67,6 +69,18 @@ func ClearUserCache(userID string) {
 	if global != nil {
 		global.ClearUserCache(userID)
 	}
+}
+
+func PingRedis() error {
+	if global == nil {
+		return fmt.Errorf("checker not initialized")
+	}
+	if !global.enabled {
+		return fmt.Errorf("redis not available")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	return global.rdb.Ping(ctx).Err()
 }
 
 func TotalChecks() uint64 {

@@ -21,8 +21,17 @@ func env(key, fallback string) string {
 }
 
 func main() {
+	logLevel := slog.LevelInfo
+	switch env("LOG_LEVEL", "info") {
+	case "debug":
+		logLevel = slog.LevelDebug
+	case "warn":
+		logLevel = slog.LevelWarn
+	case "error":
+		logLevel = slog.LevelError
+	}
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
+		Level: logLevel,
 	})))
 
 	redisAddr := env("REDIS_ADDR", "localhost:6379")
@@ -31,6 +40,7 @@ func main() {
 	chUser := env("CLICKHOUSE_USER", "default")
 	chPass := env("CLICKHOUSE_PASS", "")
 	listen := env("ADMIN_API_ADDR", ":8080")
+	apiKey := env("ADMIN_API_KEY", "")
 
 	rdb := redis.NewClient(&redis.Options{
 		Addr:        redisAddr,
@@ -78,7 +88,13 @@ func main() {
 		cancel()
 	}
 
-	svc := admin.New(rdb, chConn)
+	if apiKey != "" {
+		slog.Info("admin API auth enabled")
+	} else {
+		slog.Warn("admin API auth disabled — set ADMIN_API_KEY for production")
+	}
+
+	svc := admin.New(rdb, chConn, apiKey)
 	router := svc.SetupRouter()
 
 	slog.Info("admin API server starting", "addr", listen)

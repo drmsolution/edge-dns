@@ -17,6 +17,8 @@ import (
 
 var defaultAggregator *analytics.LogAggregator
 var defaultRateLimiter *ratelimit.RateLimiter
+var defaultRateLimitQueries = 100
+var defaultRateLimitWindow = time.Second
 
 func SetAggregator(a *analytics.LogAggregator) {
 	defaultAggregator = a
@@ -24,6 +26,11 @@ func SetAggregator(a *analytics.LogAggregator) {
 
 func SetRateLimiter(rl *ratelimit.RateLimiter) {
 	defaultRateLimiter = rl
+}
+
+func SetRateLimit(queries int, window time.Duration) {
+	defaultRateLimitQueries = queries
+	defaultRateLimitWindow = window
 }
 
 func New() *Handler {
@@ -43,7 +50,7 @@ func (h *Handler) ProcessQuery(userID string, w dns.ResponseWriter, msg *dns.Msg
 	start := time.Now()
 
 	if defaultRateLimiter != nil {
-		allowed, err := defaultRateLimiter.AllowQuery(context.Background(), userID, 100, time.Second)
+		allowed, err := defaultRateLimiter.AllowQuery(context.Background(), userID, defaultRateLimitQueries, defaultRateLimitWindow)
 		if err != nil {
 			slog.Error("rate limiter error", "error", err)
 		} else if !allowed {

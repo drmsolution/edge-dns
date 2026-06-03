@@ -142,19 +142,30 @@ step_start() {
 
   cd "$INSTALL_DIR"
 
-  # Tạo .env nếu chưa có
-  if [ ! -f .env ]; then
-    cat > .env <<EOF
+	# Tạo .env nếu chưa có
+	if [ ! -f .env ]; then
+		# Sinh ADMIN_API_KEY ngẫu nhiên nếu chưa set
+		if [ -z "${ADMIN_API_KEY:-}" ]; then
+			ADMIN_API_KEY=$(openssl rand -hex 32 2>/dev/null || head -c 64 /dev/urandom | base64 -w0)
+		fi
+
+		cat > .env <<EOF
 # Edge DNS Configuration
 DOMAIN=$DOMAIN
 ADMIN_API_ADDR=:8080
+ADMIN_API_KEY=$ADMIN_API_KEY
 SNI_PROXY_ADDR=:443
 STD_ADDR=:8053
 DOH_ADDR=:8443
 DOT_ADDR=:8853
 METRICS_ADDR=:2112
+LOG_LEVEL=info
+RATE_LIMIT_QUERIES=100
+UPSTREAM_DNS=1.1.1.1:53
+UPSTREAM_TIMEOUT=5s
 EOF
-  fi
+		info "Admin API key: $ADMIN_API_KEY — hãy lưu lại!"
+	fi
 
   docker compose up -d
 
@@ -223,15 +234,27 @@ server {
 }
 EOF
 
-  # Certbot
-  certbot --nginx -d "$DOMAIN" -d "api.$DOMAIN" --non-interactive \
-    --agree-tos --email "$EMAIL" --redirect || {
-    warn "certbot thất bại — kiểm tra DNS A record đã trỏ đến IP VPS chưa?"
-    warn "Chạy thủ công sau: certbot --nginx -d $DOMAIN -d api.$DOMAIN"
-  }
+	# Ghi cert paths vào .env cho edge-dns và sniproxy dùng
+	if [ -f /etc/letsencrypt/live/"$DOMAIN"/fullchain.pem ]; then
+		sed -i '/^TLS_CERT_FILE=/d' "$INSTALL_DIR/.env"
+		sed -i '/^TLS_KEY_FILE=/d' "$INSTALL_DIR/.env"
+		cat >> "$INSTALL_DIR/.env" <<EOF
+TLS_CERT_FILE=/etc/letsencrypt/live/$DOMAIN/fullchain.pem
+TLS_KEY_FILE=/etc/letsencrypt/live/$DOMAIN/privkey.pem
+EOF
+		# Restart để nhận cert mới
+		cd "$INSTALL_DIR" && docker compose up -d
+	fi
 
-  # Auto-renew cert
-  systemctl enable --now certbot.timer
+	# Certbot
+	certbot --nginx -d "$DOMAIN" -d "api.$DOMAIN" --non-interactive \
+		--agree-tos --email "$EMAIL" --redirect || {
+		warn "certbot thất bại — kiểm tra DNS A record đã trỏ đến IP VPS chưa?"
+		warn "Chạy thủ công sau: certbot --nginx -d $DOMAIN -d api.$DOMAIN"
+	}
+
+	# Auto-renew cert
+	systemctl enable --now certbot.timer
 
   # Kích hoạt site
   ln -sf /etc/nginx/sites-available/edge-dns /etc/nginx/sites-enabled/
@@ -268,17 +291,27 @@ EOF
 
 # ─── Info ────────────────────────────────────────────────────────────────────
 step_info() {
-  info "=== Triển khai hoàn tất ==="
-  echo ""
-  echo "DNS query:      dig @$(curl -4s ifconfig.me) -p 8053 google.com"
-  echo "DoH:            curl -s 'https://$DOMAIN/dns-query?name=google.com&type=A' -H 'Accept: application/dns-json'"
-  echo "DoT:            kdig @$DOMAIN -p 8853 +tls google.com"
-  echo "Admin API:      curl http://127.0.0.1:8080/api/v1/rules | jq ."
-  echo "Health check:   curl http://127.0.0.1:2112/healthz"
-  echo ""
-  echo "Logs:           cd $INSTALL_DIR && docker compose logs -f"
-  echo "Restart:        cd $INSTALL_DIR && docker compose restart"
-  echo "Update:         cd $INSTALL_DIR && git pull && docker compose build && docker compose up -d"
+	info "=== Triển khai hoàn tất ==="
+	echo ""
+
+	if [ -f "$INSTALL_DIR/.env" ]; then
+		source <(grep ADMIN_API_KEY "$INSTALL_DIR/.env")
+	fi
+	if [ -n "${ADMIN_API_KEY:-}" ]; then
+		echo "Admin API key:  $ADMIN_API_KEY"
+		echo ""
+	fi
+
+	echo "DNS query:      dig @$(curl -4s ifconfig.me) -p 8053 google.com"
+	echo "DoH:            curl -s 'https://$DOMAIN/dns-query?name=google.com&type=A' -H 'Accept: application/dns-json'"
+	echo "DoT:            kdig @$DOMAIN -p 8853 +tls google.com"
+	echo "Admin API:      curl -H 'Authorization: Bearer \$ADMIN_API_KEY' http://127.0.0.1:8080/api/v1/rules | jq ."
+	echo "Health check:   curl http://127.0.0.1:2112/healthz"
+	echo "Ready check:    curl http://127.0.0.1:2112/readyz"
+	echo ""
+	echo "Logs:           cd $INSTALL_DIR && docker compose logs -f"
+	echo "Restart:        cd $INSTALL_DIR && docker compose restart"
+	echo "Update:         cd $INSTALL_DIR && git pull && docker compose build && docker compose up -d"
 }
 
 # ─── Main ────────────────────────────────────────────────────────────────────

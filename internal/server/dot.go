@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"os"
 	"sync"
 
 	"github.com/miekg/dns"
@@ -14,9 +15,17 @@ import (
 )
 
 func RunDoT(ctx context.Context, addr string) error {
-	tlsCert, err := cert.GenerateSelfSigned()
+	tlsCert, err := cert.LoadFromEnv()
 	if err != nil {
 		return err
+	}
+
+	tlsCertFile := os.Getenv("TLS_CERT_FILE")
+	tlsKeyFile := os.Getenv("TLS_KEY_FILE")
+	if tlsCertFile != "" && tlsKeyFile != "" {
+		slog.Info("DoT using user-supplied TLS certificate", "cert_file", tlsCertFile)
+	} else {
+		slog.Info("DoT using self-signed TLS certificate (set TLS_CERT_FILE/TLS_KEY_FILE for production)")
 	}
 
 	tlsCfg := &tls.Config{

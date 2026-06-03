@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -16,12 +17,38 @@ import (
 )
 
 type AdminService struct {
-	rdb  *redis.Client
-	chdb clickhouse.Conn
+	rdb    *redis.Client
+	chdb   clickhouse.Conn
+	apiKey string
 }
 
-func New(rdb *redis.Client, chdb clickhouse.Conn) *AdminService {
-	return &AdminService{rdb: rdb, chdb: chdb}
+func New(rdb *redis.Client, chdb clickhouse.Conn, apiKey string) *AdminService {
+	return &AdminService{rdb: rdb, chdb: chdb, apiKey: apiKey}
+}
+
+func (s *AdminService) authMiddleware() gin.HandlerFunc {
+	if s.apiKey == "" {
+		return func(c *gin.Context) {
+			c.Next()
+		}
+	}
+	return func(c *gin.Context) {
+		header := c.GetHeader("Authorization")
+		if header == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing Authorization header"})
+			return
+		}
+		var token string
+		if _, err := fmt.Sscanf(header, "Bearer %s", &token); err != nil || token == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid Authorization format, expected: Bearer <token>"})
+			return
+		}
+		if subtle.ConstantTimeCompare([]byte(token), []byte(s.apiKey)) != 1 {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid API key"})
+			return
+		}
+		c.Next()
+	}
 }
 
 func (s *AdminService) SetupRouter() *gin.Engine {
@@ -30,6 +57,7 @@ func (s *AdminService) SetupRouter() *gin.Engine {
 	r.Use(gin.Logger())
 
 	api := r.Group("/api/v1")
+	api.Use(s.authMiddleware())
 	{
 		api.POST("/rules", s.addRule)
 		api.DELETE("/rules", s.removeRule)
@@ -73,6 +101,7 @@ func (s *AdminService) addRule(c *gin.Context) {
 		slog.Error("redis publish", "error", err)
 	}
 
+	s.auditLog("add_rule", req.UserID, req.Domain, s.callerIP(c))
 	c.JSON(http.StatusOK, gin.H{"message": "rule added"})
 }
 
@@ -98,6 +127,7 @@ func (s *AdminService) removeRule(c *gin.Context) {
 		slog.Error("redis publish", "error", err)
 	}
 
+	s.auditLog("remove_rule", req.UserID, req.Domain, s.callerIP(c))
 	c.JSON(http.StatusOK, gin.H{"message": "rule removed"})
 }
 
@@ -150,6 +180,7 @@ func (s *AdminService) addRedirect(c *gin.Context) {
 		slog.Error("redis publish", "error", err)
 	}
 
+	s.auditLog("add_redirect", req.UserID, req.Domain, s.callerIP(c))
 	c.JSON(http.StatusOK, gin.H{"message": "redirect added"})
 }
 
@@ -175,6 +206,7 @@ func (s *AdminService) removeRedirect(c *gin.Context) {
 		slog.Error("redis publish", "error", err)
 	}
 
+	s.auditLog("remove_redirect", req.UserID, req.Domain, s.callerIP(c))
 	c.JSON(http.StatusOK, gin.H{"message": "redirect removed"})
 }
 
@@ -304,6 +336,22 @@ func (s *AdminService) analyticsLogs(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"user_id": userID, "logs": entries})
+}
+
+func (s *AdminService) auditLog(action, userID, domain, callerIP string) {
+	slog.Info("admin audit",
+		"action", action,
+		"user_id", userID,
+		"domain", domain,
+		"caller_ip", callerIP,
+	)
+}
+
+func (s *AdminService) callerIP(c *gin.Context) string {
+	if fwd := c.GetHeader("X-Forwarded-For"); fwd != "" {
+		return fwd
+	}
+	return c.ClientIP()
 }
 
 func (s *AdminService) publishClearCache(ctx context.Context, userID string) error {

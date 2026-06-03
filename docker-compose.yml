@@ -55,6 +55,12 @@ services:
       STD_ADDR: ":8053"
       DOH_ADDR: ":8443"
       DOT_ADDR: ":8853"
+      LOG_LEVEL: "${LOG_LEVEL:-info}"
+      RATE_LIMIT_QUERIES: "${RATE_LIMIT_QUERIES:-100}"
+      UPSTREAM_DNS: "${UPSTREAM_DNS:-1.1.1.1:53}"
+      UPSTREAM_TIMEOUT: "${UPSTREAM_TIMEOUT:-5s}"
+      TLS_CERT_FILE: "${TLS_CERT_FILE:-}"
+      TLS_KEY_FILE: "${TLS_KEY_FILE:-}"
 
   admin-api:
     build:
@@ -73,6 +79,8 @@ services:
       REDIS_ADDR: redis:6379
       CLICKHOUSE_ADDR: clickhouse:9000
       ADMIN_API_ADDR: ":8080"
+      ADMIN_API_KEY: "${ADMIN_API_KEY:-}"
+      LOG_LEVEL: "${LOG_LEVEL:-info}"
 
   sniproxy:
     build:

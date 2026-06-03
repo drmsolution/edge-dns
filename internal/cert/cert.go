@@ -10,8 +10,22 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"os"
 	"time"
 )
+
+func LoadFromEnv() (tls.Certificate, error) {
+	certFile := os.Getenv("TLS_CERT_FILE")
+	keyFile := os.Getenv("TLS_KEY_FILE")
+	if certFile != "" && keyFile != "" {
+		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+		if err != nil {
+			return tls.Certificate{}, fmt.Errorf("load TLS cert from %s, %s: %w", certFile, keyFile, err)
+		}
+		return cert, nil
+	}
+	return GenerateSelfSigned()
+}
 
 func GenerateSelfSigned() (tls.Certificate, error) {
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
